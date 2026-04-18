@@ -69,6 +69,7 @@
 ### Image preprocessing
 
 - [ ] Define train transforms: resize to 64x64 locally (224x224 on Colab), random flip, rotation ±15°, colour jitter
+- [ ] Write a markdown cell justifying each augmentation choice — explain why each transform is appropriate for wine label images *(rubric requirement)*
 - [ ] Define val/test transforms: resize only, no augmentation
 - [ ] Apply ImageNet mean/std normalisation (required for ResNet-18)
 - [ ] Write `WineImageDataset` class that returns (image tensor, country label)
@@ -79,6 +80,7 @@
 
 - [ ] Drop rows where `review` is null
 - [ ] Lowercase all review text
+- [ ] Write a markdown cell justifying word-level tokenisation over subword/character-level — explain the trade-offs for wine review language *(rubric requirement)*
 - [ ] Tokenise using `nltk.word_tokenize`
 - [ ] Build vocabulary from training set only, capped at 20,000 words
 - [ ] Add `<PAD>` (index 0) and `<UNK>` (index 1) tokens
@@ -215,6 +217,7 @@
 - [ ] Evaluate both on test set: accuracy, F1-score (macro), confusion matrix
 - [ ] Compare both variants in a summary table
 - [ ] Write paragraph explaining why BiLSTM outperforms unidirectional (reads context in both directions)
+- [ ] **Bonus +3 pts:** Fine-tune DistilBERT (`distilbert-base-uncased`) on quality tier classification — freeze transformer, train classification head for 3 epochs, compare Accuracy + F1 vs BiLSTM on the same test set
 - [ ] Run BiLSTM on the entire dataset — predict quality tier for every review
 - [ ] Save enriched dataframe (original columns + `predicted_tier` + `tier_confidence`) to `enriched_dataset.csv`
 - [ ] Download `enriched_dataset.csv` and `bilstm_best.pt` to local machine
@@ -278,6 +281,7 @@
 - [ ] Build DataFrame with columns: wine name, CNN prediction, BiLSTM tier, actual rating, price, combined recommendation
 - [ ] Save as `outputs/integration_examples.csv`
 - [ ] Save as formatted table in the notebook
+- [ ] Write narrative analysis: identify 3–5 specific examples in the table where the combined output gives a more complete or actionable insight than either model alone — explain why in prose *(rubric requirement)*
 
 ### Comparison chart (rubric requirement)
 
@@ -289,39 +293,81 @@
 ---
 
 ## Phase 10 — Deployment
-**Goal:** Working FastAPI app serving the Qualio frontend locally. Then deploy to Render.
-**Where:** Local → Render
+**Goal:** Working app locally, then live on Hugging Face Spaces.
+**Where:** Local → Hugging Face Spaces
 **Time:** ~4-5 hours
 
-### Local FastAPI
+> **Choose your approach before starting:**
+> - **Option A — Gradio** (recommended): simpler, native HF Spaces support, fastest to deploy. Loses the custom Qualio HTML design but fully functional for the rubric.
+> - **Option B — Docker Space**: keeps your FastAPI + custom Qualio HTML. More setup but preserves the full product design.
 
-- [ ] Create `deployment/app.py` with FastAPI application
+---
+
+### Local — build and test first
+
+- [ ] Create `deployment/app.py` with FastAPI application (used by both options)
 - [ ] Add `/predict` endpoint that accepts an uploaded image
+- [ ] Add `/predict-text` POST endpoint that accepts a review string and returns BiLSTM tier + confidence scores for all 3 tiers *(rubric requirement — text input with RNN prediction)*
 - [ ] Load CNN weights at startup
+- [ ] Load BiLSTM weights and vocab at startup (needed for live `/predict-text` inference)
 - [ ] Load `enriched_dataset.csv` and `napping.csv` at startup
 - [ ] Run CNN on uploaded image — return country prediction + confidence
 - [ ] Look up matched vintage in enriched CSV — return all wine attributes
 - [ ] Run napping similarity function — return 3 similar wines
 - [ ] Return full JSON response
 - [ ] Copy `qualio-v4.html` into `deployment/static/index.html`
+- [ ] Add text area input to `index.html` wired to `/predict-text` — display tier + confidence on submit *(rubric requirement)*
+- [ ] Verify combined badge updates when both image and text inputs are provided
 - [ ] Mount static files so the HTML is served at root
 - [ ] Run locally: `uvicorn app:app --reload --port 8000`
 - [ ] Open `localhost:8000` — confirm Qualio loads
 - [ ] Upload a test label image — confirm the full sourcing brief appears
+- [ ] Enter a test review — confirm BiLSTM tier + confidence appear
 - [ ] Take a screenshot of the working prototype — save to `outputs/prototype_screenshot.png`
 
-### Render deployment
+---
 
-- [ ] Create `deployment/requirements.txt` with all production dependencies
-- [ ] Create a GitHub repository and push the `deployment/` folder
-- [ ] Create new Render web service, connect to the GitHub repo
-- [ ] Set start command: `uvicorn app:app --host 0.0.0.0 --port $PORT`
-- [ ] Wait for build to complete — fix any dependency errors
-- [ ] Open the Render URL — confirm Qualio loads
-- [ ] Test with a real label image — confirm full output appears
-- [ ] Copy the public Render URL — this is your submission deployment link
+### Option A — Hugging Face Spaces (Gradio)
 
-**Done when:** Qualio is live on a public URL and returns a full sourcing brief for an uploaded label.
+- [ ] Create `deployment/gradio_app.py` with a Gradio interface
+- [ ] Tab 1: image input → CNN prediction + wine fact card + similar wines
+- [ ] Tab 2: text input → BiLSTM tier + confidence bar
+- [ ] Tab 3 or combined: show sourcing recommendation from both inputs
+- [ ] Test locally: `python gradio_app.py`
+- [ ] Create a new Space at [huggingface.co/new-space](https://huggingface.co/new-space) — SDK: Gradio
+- [ ] Push `deployment/` folder to the Space repo:
+  ```bash
+  git clone https://huggingface.co/spaces/YOUR_USERNAME/qualio
+  # copy files in, then push
+  ```
+- [ ] Upload `enriched_dataset.csv`, `napping.csv`, `cnn_resnet_best.pt`, `bilstm_best.pt` to the Space repo (use `huggingface_hub` or Git LFS for large files)
+- [ ] Wait for build — fix any import or dependency errors in `requirements.txt`
+- [ ] Open the Space URL — confirm both tabs work
+- [ ] Copy the public Space URL — this is your submission deployment link
+
+---
+
+### Option B — Hugging Face Spaces (Docker)
+
+- [ ] Create `deployment/Dockerfile`:
+  ```dockerfile
+  FROM python:3.10-slim
+  WORKDIR /app
+  COPY . .
+  RUN pip install -r requirements.txt
+  CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "7860"]
+  ```
+- [ ] Note: HF Spaces Docker uses port **7860** by default
+- [ ] Create a new Space at [huggingface.co/new-space](https://huggingface.co/new-space) — SDK: Docker
+- [ ] Push `deployment/` folder to the Space repo
+- [ ] Upload model weights and data files using Git LFS or `huggingface_hub.upload_file`
+- [ ] Wait for Docker build — fix any errors shown in the build logs
+- [ ] Open the Space URL — confirm Qualio HTML loads and both endpoints work
+- [ ] Copy the public Space URL — this is your submission deployment link
+
+---
+
+**Done when:** Qualio is live on a public Hugging Face Spaces URL, image upload returns a sourcing brief, and text input returns a BiLSTM quality tier.
 
 ---
 
@@ -380,7 +426,7 @@
 - [ ] `Final_Project.ipynb` — runs end to end without errors
 - [ ] `Final_Project.pdf` — all outputs visible
 - [ ] Presentation `.pptx` or `.pdf` — 13+ slides
-- [ ] Deployment URL — Qualio live on Render
+- [ ] Deployment URL — Qualio live on Hugging Face Spaces
 - [ ] Screen recording URL — 3-minute demo backup
 - [ ] All submitted via Moodle before the deadline
 
@@ -399,7 +445,7 @@
 | 7 — BiLSTM full training | Colab | 2 hrs |
 | 8 — Explainability | Local | 3 hrs |
 | 9 — Business integration | Local | 3 hrs |
-| 10 — Deployment | Local + Render | 5 hrs |
+| 10 — Deployment | Local + HF Spaces | 5 hrs |
 | 11 — Notebook cleanup | Local | 4 hrs |
 | 12 — Presentation | Local | 4 hrs |
 | **Total** | | **~35 hours** |
