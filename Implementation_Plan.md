@@ -1,4 +1,4 @@
-# Qualio — Implementation Plan
+# Wine-Intelligence — Implementation Plan
 
 ## Step-by-step reference for beginners
 
@@ -6,17 +6,11 @@
 
 ## Before you start — one-time setup
 
-1. Install Python 3.10+ and VS Code
-2. Install the Jupyter extension in VS Code
-3. Create the folder structure from `Work_idea.md`
-4. Create `qualio.ipynb` inside the `qualio/` folder
-5. Install packages in Cell 1 of the notebook:
+1. Create the folder structure — done automatically, folders exist at `wine-intelligence/data/`, `wine-intelligence/weights/`, `wine-intelligence/deployment/`
+2. Open `wine-intelligence/wine_intelligence.ipynb` in VS Code
+3. Run **Cell 1** (pip installs) — this is inside the notebook, not the terminal. All packages install from there.
 
-   ```bash
-   pip install torch torchvision datasets transformers
-   pip install pandas numpy matplotlib seaborn scikit-learn
-   pip install torchcam streamlit
-   ```
+Everything else happens inside the notebook from this point forward.
 
 ---
 
@@ -146,7 +140,7 @@
 
 ### STEP 10 — Move to Colab
 
-- Upload `qualio.ipynb` to Google Colab
+- Upload `wine_intelligence.ipynb` to Google Colab
 - Mount Google Drive
 - Change the dataset split from `small` to `full`
 - Change training epochs: CNN → 10 epochs, BiLSTM → 5 epochs
@@ -175,7 +169,7 @@
 
 ### STEP 13 — Download artefacts back to local
 
-Download from Colab/Drive to your `qualio/` folder:
+Download from Colab/Drive to your `wine-intelligence/` folder:
 
 - `weights/cnn_resnet18.pt`
 - `weights/bilstm.pt`
@@ -241,7 +235,7 @@ Download from Colab/Drive to your `qualio/` folder:
 
 Add three markdown cells:
 
-1. **Business framing** — Who uses Qualio? (restaurant/hotel buyers). What decision does it support? (stocking). What is the cost of a wrong prediction? (Entry wine recommended as Exceptional = buyer overpays)
+1. **Business framing** — Who uses Wine-Intelligence? (restaurant/hotel buyers). What decision does it support? (stocking). What is the cost of a wrong prediction? (Entry wine recommended as Exceptional = buyer overpays)
 2. **Ethics and bias** — Training labels come from English Vivino reviews only (language bias). Label images skew toward European wines (geographic bias). Mitigation ideas.
 3. **Team contribution table** — List each team member and what they built.
 
