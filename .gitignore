@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Data — too large for GitHub
+data/
+*.csv
+*.zip
+
+# Model weights — too large for GitHub
+weights/
+*.pt
+*.pth
+
+# Outputs
+outputs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
