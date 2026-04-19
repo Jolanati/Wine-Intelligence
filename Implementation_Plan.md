@@ -1,270 +1,387 @@
-# Wine-Intelligence â€” Implementation Plan
+# Beer Peer — Implementation Plan
 
-## Step-by-step reference for beginners
+## Step-by-step reference
 
----
-
-## Before you start â€” one-time setup
-
-1. Create the folder structure â€” done automatically, folders exist at `wine-intelligence/data/`, `wine-intelligence/weights/`, `wine-intelligence/deployment/`
-2. Open `wine-intelligence/wine_intelligence.ipynb` in VS Code
-3. Run **Cell 1** (pip installs) â€” this is inside the notebook, not the terminal. All packages install from there.
-
-Everything else happens inside the notebook from this point forward.
+> **Architecture in one sentence:** CNN classifies a food photo ? food label ? lookup table ? 2-3 beer styles ? BiLSTM retrieves flavor language per style; joint model learns food-beer compatibility from (image embedding, review embedding) pairs supervised by the lookup table.
 
 ---
 
-## PHASE 1 â€” Local skeleton (VS Code, CPU, small data)
+## Product recap
+
+A user photographs their food. Beer Peer returns three beer style recommendations, each with flavor language written by real beer drinkers. Three independent components: a CNN that sees the food, a BiLSTM that reads beer reviews, and a lookup table that connects them. The joint model (+10 pts) learns to generalize that connection — scoring food-beer pairs the lookup table never explicitly covered.
+
+---
+
+## Datasets
+
+| Dataset | How to load | Content | Used for |
+|---|---|---|---|
+| Food-101 | `load_dataset("ethz/food101")` | 101,000 images, 101 food classes | CNN training |
+| BeerAdvocate | `kaggle datasets download rdoume/beerreviews` | 1.5M reviews, `beer_style`, `review_text`, `review_overall` | BiLSTM training |
+| Pairing table | Embedded CSV string in notebook | 101 foods × 3 beer styles | Lookup + joint model labels |
+
+**BiLSTM labels:** 8 macro-style classes (Lager / IPA / Stout-Porter / Wheat / Sour-Farmhouse / Amber-Brown / Pale Ale / Specialty) — group the 100+ raw `beer_style` values before training.
+
+---
+
+## Development phases
+
+| Phase | Environment | Sections | What happens |
+|---|---|---|---|
+| **Phase 1** | VS Code (CPU) | 1–4, 6, 10–12 | Data loading. EDA. Text preprocessing. LSTM + BiLSTM training. |
+| **Phase 2** | Google Colab (GPU) | 5, 7–9, 13 | Image data loaders. CNN training (scratch + ResNet-50). Grad-CAM. Joint model training. |
+| **Phase 3** | VS Code (CPU) | 9, 12, 14–15, deployment | Explainability. Recommendation card. Streamlit app. PDF export. |
+
+---
+
+## Before you start — one-time setup
+
+1. Folders `weights/`, `figures/`, `deployment/` are created automatically by the notebook.
+2. Open `beer-peer/beer_peer.ipynb`.
+3. Run **Section 1** (pip installs) once per environment.
+4. For BeerAdvocate: set up Kaggle API key (`~/.kaggle/kaggle.json`) before Phase 1.
+
+---
+
+## PHASE 1 — Local skeleton (VS Code, CPU)
 
 > Goal: every cell runs without errors. Accuracy does not matter yet.
 
 ---
 
-### STEP 1 â€” Load the dataset (sanity check first)
+### STEP 1 — Load the datasets
 
-- Download the WineSensed `small` split from HuggingFace
-- **Print how many rows and how many MB** before doing anything else
-- Save three CSV files to `data/`:
-  - `images_reviews_attributes.csv` â€” vintages with labels, prices, ratings
-  - `napping.csv` â€” the 2D taste coordinates
-- Print the first 5 rows of each file so you can see the column names
+**Section 2 of the notebook.**
 
-**You are done when:** data loads without error and you can see column names.
+```python
+from datasets import load_dataset
+ds_food = load_dataset("ethz/food101")   # downloads ~5 GB
 
----
+import pandas as pd
+df_beer = pd.read_csv("beerreviews.csv") # after kaggle download
+```
 
-### STEP 2 â€” Image EDA (exploratory data analysis)
+- Print shapes, column names, class counts for both.
+- Map `beer_style` ? 8 macro-style classes; print distribution.
+- Load the pairing table from the embedded CSV string; display as a DataFrame.
 
-- Load 16 wine label images and display them in a grid
-- Print image dimensions (width Ã— height Ã— channels)
-- Count how many images per style class (red / white / rosÃ© / sparkling)
-- Plot a bar chart of class distribution
-- Check if classes are balanced â€” note it in a markdown cell
-
-**You are done when:** you have a visible image grid and a bar chart.
+**Done when:** three DataFrames visible with correct shapes.
 
 ---
 
-### STEP 3 â€” Text EDA
+### STEP 2 — EDA: image dataset
 
-- Load the Vivino reviews
-- Print: total number of reviews, average word count per review
-- Plot a histogram of review lengths
-- Create 3 quality tier labels from star ratings:
-  - 1â€“2 stars â†’ Entry
-  - 3 stars â†’ Premium
-  - 4â€“5 stars â†’ Exceptional
-- Plot a bar chart of tier distribution
-- Show 3 example reviews from each tier
+**Section 3 of the notebook.**
 
-**You are done when:** you can see the tier bar chart and example reviews.
+- 3×6 sample image grid (2 images per food class, randomly sampled from 18 classes).
+- Class distribution bar chart (101 bars — confirm ~750 train / ~250 test per class).
+- Image dimension histogram (confirm variable resolution ? need resize in preprocessing).
+
+**Done when:** sample grid and distribution chart visible.
 
 ---
 
-### STEP 4 â€” Image preprocessing
+### STEP 3 — EDA: text dataset
 
-- Resize all images to 224Ã—224
-- Apply ImageNet normalisation (mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-- Apply training augmentations: random horizontal flip, random rotation Â±15Â°, colour jitter
-- Split into train (70%) / val (15%) / test (15%) â€” stratified by style class, fixed random seed
-- Create PyTorch `DataLoader` objects for each split
+**Section 4 of the notebook.**
 
-**You are done when:** you can load one batch and print its shape (e.g. `torch.Size([32, 3, 224, 224])`).
+- Review length histogram (words per review); mark the 95th percentile ? set as max token length.
+- Macro-style class distribution bar chart (confirm reasonable balance after grouping).
+- Word cloud per macro-style (8 clouds).
+- 3 sample reviews per macro-style.
 
----
-
-### STEP 5 â€” Text preprocessing
-
-- Tokenise reviews at word level
-- Load GloVe-100d embeddings â€” build a vocabulary from the training set only
-- Pad or truncate sequences to a fixed max length (start with 100 tokens)
-- Print: vocabulary size, % of reviews truncated
-- Split into train / val / test (same 70/15/15, stratified by tier)
-- Create PyTorch `DataLoader` objects
-
-**You are done when:** you can load one batch and print its shape (e.g. `torch.Size([32, 100])`).
+**Done when:** all plots visible; max token length chosen.
 
 ---
 
-### STEP 6 â€” CNN from scratch (simple version)
+### STEP 4 — Text preprocessing and data loaders
 
-- Build a small CNN with 3 convolutional blocks (Conv â†’ ReLU â†’ MaxPool)
-- Add a fully connected head with 4 output neurons (one per style class)
-- Train for 2 epochs on CPU
-- Plot training loss and validation loss per epoch
-- Print final validation accuracy
+**Section 6 of the notebook.**
 
-**You are done when:** loss goes down over 2 epochs (even slightly).
+- Tokenise `review_text` at word level; lowercase; strip punctuation.
+- Load GloVe-100d; build vocab from training split only (no data leakage).
+- Pad/truncate to 95th-percentile token length; print % truncated.
+- Train / val / test split: 70 / 15 / 15, stratified by macro-style, `SEED=42`.
+- Create `DataLoader` (batch size 64).
 
----
-
-### STEP 7 â€” CNN with ResNet-18 (transfer learning)
-
-- Load ResNet-18 with pre-trained ImageNet weights
-- Freeze all layers except the last fully connected layer
-- Replace the FC layer with a new one: 512 â†’ 4 outputs
-- Train for 2 epochs on CPU
-- Plot training and validation loss/accuracy
-- Compare accuracy with the from-scratch CNN in a markdown cell
-
-**You are done when:** ResNet-18 trains and you have a comparison note.
+**Done when:** one batch prints `torch.Size([64, N])`.
 
 ---
 
-### STEP 8 â€” LSTM (unidirectional, baseline)
+### STEP 5 — CNN skeleton (architecture only)
 
-- Build: Embedding layer (GloVe weights) â†’ LSTM (128 hidden units) â†’ Linear â†’ 3 outputs
-- Train for 2 epochs on CPU
-- Plot training and validation loss/accuracy
+**Section 7 of the notebook.**
 
-**You are done when:** loss goes down.
+- Define 3-block custom CNN: `Conv2d ? BatchNorm ? ReLU ? MaxPool2d` × 3 ? `Flatten ? FC(512) ? FC(101)`.
+- `model(torch.randn(2, 3, 224, 224))` returns `[2, 101]`.
+- Full training in Phase 2 only.
 
----
-
-### STEP 9 â€” BiLSTM (bidirectional, improved)
-
-- Same as Step 8 but set `bidirectional=True` in the LSTM layer
-- Add an attention mechanism (a simple weighted sum over hidden states)
-- Train for 2 epochs on CPU
-- Compare accuracy with the unidirectional LSTM in a markdown cell
-
-**You are done when:** you have both LSTM variants trained and compared.
+**Done when:** forward pass runs; parameter count printed.
 
 ---
 
-## PHASE 2 â€” Real training (Google Colab, GPU)
+### STEP 6 — ResNet-50 skeleton
 
-> Goal: get good weights. This is the only phase that needs a GPU.
+**Section 8 of the notebook.**
 
----
+- `torchvision.models.resnet50(weights='IMAGENET1K_V1')`; freeze all; replace `fc` with `nn.Linear(2048, 101)`.
+- Forward pass returns `[2, 101]`.
 
-### STEP 10 â€” Move to Colab
-
-- Upload `wine_intelligence.ipynb` to Google Colab
-- Mount Google Drive
-- Change the dataset split from `small` to `full`
-- Change training epochs: CNN â†’ 10 epochs, BiLSTM â†’ 5 epochs
+**Done when:** shape correct; frozen vs. trainable parameter counts printed.
 
 ---
 
-### STEP 11 â€” Train CNN properly
+### STEP 7 — LSTM baseline (full training on CPU)
 
-- Train both CNN variants (from scratch and ResNet-18) for real
-- Save the best checkpoint based on validation accuracy:
-  - `weights/cnn_scratch.pt`
-  - `weights/cnn_resnet18.pt`
-- Report final test metrics: Accuracy, F1-score, Confusion Matrix
+**Section 10 of the notebook.**
 
----
+- `nn.Embedding(GloVe) ? nn.LSTM(hidden=128) ? nn.Linear(128, 8)`.
+- Train 3 epochs; plot loss + accuracy curves.
+- Report val accuracy.
 
-### STEP 12 â€” Run BiLSTM batch inference
-
-- Train both LSTM variants for real
-- Save `weights/bilstm.pt`
-- Run the trained BiLSTM on **all vintages** in the dataset
-- Save the predictions to `data/enriched_dataset.csv` (vintage ID + quality tier)
-- Report final test metrics: Accuracy, F1-score, Confusion Matrix
+**Done when:** loss decreases across epochs.
 
 ---
 
-### STEP 13 â€” Download artefacts back to local
+### STEP 8 — BiLSTM with attention (full training on CPU)
 
-Download from Colab/Drive to your `wine-intelligence/` folder:
+**Section 11 of the notebook.**
 
-- `weights/cnn_resnet18.pt`
-- `weights/bilstm.pt`
-- `data/enriched_dataset.csv`
+- `bidirectional=True`, hidden 128 (output 256).
+- Attention: `score = softmax(W · h_t)` ? weighted sum ? classification head.
+- Train 3 epochs; compare val accuracy vs. LSTM baseline.
+- Save `weights/bilstm.pt`.
 
----
-
-## PHASE 3 â€” Analysis, explainability, deployment (VS Code, CPU)
-
-> Goal: everything required by the rubric that doesn't need a GPU.
+**Done when:** BiLSTM trained, weights saved, accuracy comparison written in markdown.
 
 ---
 
-### STEP 14 â€” Evaluate final models (load saved weights)
+### STEP 9 — Joint model skeleton
 
-- Load `cnn_resnet18.pt` and run it on the test set
-- Load `bilstm.pt` and run it on the text test set
-- Print and plot: Accuracy, F1-score, Confusion Matrix for both models
-- Add a CSV guard: `if not os.path.exists('data/enriched_dataset.csv'): run batch inference`
+**Section 13 of the notebook.**
+
+Build the training data from what you already have:
+
+```python
+# Positive pairs: food image + review of a paired style ? label 1
+# Negative pairs: food image + review of a non-paired style ? label 0
+# Source of truth: food_beer_pairing.csv
+
+def build_pairs(df_food, df_beer, pairing_df, n_negatives_per_positive=3):
+    pairs = []
+    for _, row in pairing_df.iterrows():
+        food = row['food']
+        paired_styles = [row['beer_style_1'], row['beer_style_2'], row['beer_style_3']]
+        food_images = df_food.filter(label=food101_label_map[food])
+        
+        for style in paired_styles:
+            reviews = df_beer[df_beer['macro_style'] == style]['review_text'].sample(5)
+            for img in food_images.select(range(5)):
+                for rev in reviews:
+                    pairs.append((img, rev, 1))  # positive
+        
+        all_styles = set(MACRO_STYLES) - set(paired_styles)
+        for style in random.sample(all_styles, n_negatives_per_positive):
+            reviews = df_beer[df_beer['macro_style'] == style]['review_text'].sample(5)
+            for img in food_images.select(range(5)):
+                for rev in reviews:
+                    pairs.append((img, rev, 0))  # negative
+    return pairs
+```
+
+Architecture (skeleton — forward pass on dummy tensors only):
+
+```python
+class CompatibilityModel(nn.Module):
+    def __init__(self, cnn_encoder, bilstm_encoder):
+        super().__init__()
+        self.cnn = cnn_encoder    # frozen, outputs 512-d (scratch) or 2048-d (ResNet)
+        self.bilstm = bilstm_encoder  # frozen, outputs 256-d
+        self.fc = nn.Sequential(
+            nn.Linear(512 + 256, 256),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(256, 1),
+            nn.Sigmoid()
+        )
+    
+    def forward(self, image, text):
+        img_emb = self.cnn(image)    # [B, 512]
+        txt_emb = self.bilstm(text)  # [B, 256]
+        x = torch.cat([img_emb, txt_emb], dim=1)  # [B, 768]
+        return self.fc(x)            # [B, 1]
+```
+
+- `model(torch.randn(2,3,224,224), torch.randint(0,1000,(2,N)))` returns `[2, 1]`.
+- Full training in Phase 2.
+
+**Done when:** forward pass runs; only FC head parameters are trainable.
 
 ---
 
-### STEP 15 â€” CNN explainability (Grad-CAM)
+## PHASE 2 — Real training (Google Colab, GPU)
 
-- Pick 6 test images (2 correct predictions, 2 wrong, 2 uncertain)
-- Use `torchcam` to generate a Grad-CAM heatmap for each
-- Show the original image side by side with the heatmap
-- Write a 3-sentence markdown interpretation: what regions drove the prediction?
+> Goal: get good weights. Only this phase requires GPU.
 
 ---
 
-### STEP 16 â€” BiLSTM explainability (attention weights)
+### STEP 10 — Move to Colab
 
-- Pick 6 reviews (2 from each tier)
-- Extract the attention weights from the BiLSTM
-- Visualise as a colour-highlighted sentence (darker = more attention)
-- Write a 3-sentence markdown interpretation: which words mattered most?
-
----
-
-### STEP 17 â€” Napping similarity (taste neighbours)
-
-- Load `napping.csv` â€” each wine has an (x, y) coordinate
-- Write a function: given a wine ID, compute Euclidean distance to all others, return top 3
-- Test it on 5 wines and display results as a small table
+- Upload `beer_peer.ipynb` to Colab; mount Drive; set weight output paths to Drive.
+- Run **Section 5**: build image `DataLoader` from Food-101.
+  - Transforms: `Resize(256) ? CenterCrop(224) ? RandomHorizontalFlip ? ColorJitter ? ToTensor ? Normalize(ImageNet stats)`.
+  - Train / val / test split stratified by class (750/250 already done by Food-101 — use official split).
+  - Confirm one batch: `torch.Size([B, 3, 224, 224])`.
 
 ---
 
-### STEP 18 â€” Business integration
+### STEP 11 — Train CNN scratch (full)
 
-- Write a `recommend(wine_id)` function that:
-  1. Gets CNN style prediction (with confidence %)
-  2. Looks up quality tier from `enriched_dataset.csv`
-  3. Looks up wine fact card (name, grape, region, price, alcohol, rating)
-  4. Runs napping similarity â†’ top 3 taste neighbours
-  5. Returns a plain-language sourcing recommendation
-- Build a table of 20 examples showing CNN prediction + quality tier + recommendation side by side
-- Plot a bar chart comparing CNN accuracy, BiLSTM accuracy, and combined recommendation quality
+**Section 7 — full training.**
+
+- 20 epochs, early stopping on val loss (patience 3).
+- Optimizer: Adam lr 1e-3; scheduler: ReduceLROnPlateau.
+- Save best to `weights/cnn_scratch.pt`.
+- Report test: Accuracy (top-1 and top-5), macro F1, Confusion Matrix (sample 20 classes for readability).
 
 ---
 
-### STEP 19 â€” Business framing (markdown cells)
+### STEP 12 — Train ResNet-50 (full)
 
-Add three markdown cells:
+**Section 8 — full training.**
 
-1. **Business framing** â€” Who uses Wine-Intelligence? (restaurant/hotel buyers). What decision does it support? (stocking). What is the cost of a wrong prediction? (Entry wine recommended as Exceptional = buyer overpays)
-2. **Ethics and bias** â€” Training labels come from English Vivino reviews only (language bias). Label images skew toward European wines (geographic bias). Mitigation ideas.
-3. **Team contribution table** â€” List each team member and what they built.
+- Phase A: frozen backbone, train FC head only, 5 epochs, lr 1e-3.
+- Phase B: unfreeze last ResNet block (`layer4`), lr 1e-4, 10 more epochs.
+- Save best to `weights/cnn_resnet50.pt`.
+- Report test: Accuracy, macro F1, Confusion Matrix.
+- Markdown: compare scratch vs. ResNet-50 — accuracy, training time, top-5 failure modes.
 
 ---
 
-### STEP 20 â€” Streamlit deployment
+### STEP 13 — Train joint model (full)
 
-Create `deployment/app.py`:
+**Section 13 — full training.**
 
-- Section 1: Upload a wine label image â†’ CNN predicts style with confidence
-- Section 2: Paste a review â†’ BiLSTM predicts quality tier with confidence
-- Section 3: Combined sourcing recommendation shown as a card
+- Load frozen `cnn_resnet50.pt` encoder (replace FC with identity to get 2048-d embedding).
+- Load frozen `bilstm.pt` encoder (remove classification head to get 256-d embedding).
+- Build compatibility pairs (Step 9 code, now on full data).
+- Train only the FC head, 10 epochs, BCELoss, Adam lr 1e-3.
+- Save to `weights/joint_model.pt`.
+- Report: AUC-ROC, precision, recall on test pairs.
+- **The interesting experiment:** run the joint model on food-style pairs NOT in the lookup table. Print the top-5 unexpected high-scoring pairs — these are the "learned extensions" of the hardcoded rules.
+
+---
+
+### STEP 14 — Download artefacts
+
+Download from Colab / Drive to local `weights/`:
+
+- `cnn_scratch.pt`
+- `cnn_resnet50.pt`
+- `bilstm.pt`
+- `joint_model.pt`
+
+---
+
+## PHASE 3 — Analysis, explainability, deployment (VS Code, CPU)
+
+> Goal: rubric-required analysis and working demo.
+
+---
+
+### STEP 15 — CNN explainability (Grad-CAM)
+
+**Section 9 of the notebook.**
+
+- Load `cnn_resnet50.pt`; select 6 test images (2 correct, 2 wrong class, 2 top-5 correct but top-1 wrong).
+- Generate Grad-CAM heatmap with `torchcam`; display original + overlay side by side.
+- 3-sentence markdown per example: which part of the food drove the classification?
+
+---
+
+### STEP 16 — BiLSTM explainability (attention weights)
+
+**Section 12 of the notebook.**
+
+- Load `bilstm.pt`; pick 6 reviews (1 per macro-style, 6 of 8).
+- Extract attention weight vector; render as colour-highlighted text (word opacity ? weight).
+- 3-sentence interpretation: which words ("hoppy", "roasty", "crisp") drove each style prediction?
+
+---
+
+### STEP 17 — Recommendation card + 20-example table
+
+**Section 14 of the notebook.**
+
+```python
+def recommend(image_path):
+    # 1. CNN ? food label (top-3 with confidence)
+    food_label, confidence = cnn_predict(image_path)
+    
+    # 2. Lookup table ? 2-3 beer styles
+    styles = get_beer_styles(food_label, pairing_df)
+    
+    # 3. Joint model ? re-score and re-rank styles
+    joint_scores = {s: joint_score(image_path, sample_review(s)) for s in styles}
+    ranked_styles = sorted(joint_scores, key=joint_scores.get, reverse=True)
+    
+    # 4. BiLSTM ? retrieve top-rated review sentences per style
+    flavor_text = {s: get_flavor_language(s, df_beer) for s in ranked_styles}
+    
+    return format_card(food_label, confidence, ranked_styles, joint_scores, flavor_text)
+```
+
+- Run on 20 Food-101 test images.
+- Display as table: Food | CNN confidence | Style 1 | Style 2 | Style 3 | Joint scores.
+- Highlight 3 cases where joint model re-ranked the lookup table order — explain why.
+
+---
+
+### STEP 18 — Business framing (markdown cells)
+
+**Section 15 of the notebook.**
+
+Three markdown cells:
+
+1. **Business framing** — target user (restaurant guests, home cooks, event planners). Decision supported: what beer to order or stock. Cost of a bad recommendation: wasted purchase, disappointed guest. Cost of a missed pairing: guest defaults to habit instead of trying something new.
+2. **Ethics and bias** — BeerAdvocate skews toward craft beer enthusiasts and English-language reviewers. Food-101 skews toward Western dishes. Pairing table is curated by one perspective (Brewers Association). Joint model inherits all three biases. Mitigation ideas.
+3. **Team contribution table** — each member's section ownership.
+
+---
+
+### STEP 19 — Streamlit deployment
+
+**`deployment/app.py`**
+
+Two-column layout:
+
+- **Left:** Upload food photo ? CNN food label + confidence bar + Grad-CAM heatmap.
+- **Right:** Three beer style cards, each showing: style name, joint compatibility score, top 3 flavor sentences from BiLSTM-ranked BeerAdvocate reviews.
 
 Test locally: `streamlit run deployment/app.py`
-Deploy: push to GitHub â†’ connect repo to Streamlit Cloud â†’ share the link.
+Deploy: push to GitHub ? connect to Streamlit Cloud ? submit link.
 
 ---
 
 ## Final checklist before submission
 
-- [ ] Notebook runs end to end without errors (restart kernel â†’ run all)
-- [ ] All plots are visible in the notebook output
-- [ ] `weights/` folder contains saved `.pt` files
-- [ ] `data/enriched_dataset.csv` exists
+- [ ] Notebook runs end to end without errors (Restart Kernel ? Run All)
+- [ ] All 15 sections have visible outputs
+- [ ] `figures/` contains all saved plots
+- [ ] `weights/` contains all four `.pt` files
+- [ ] `recommend()` runs on a new food photo end to end
+- [ ] Joint model "unexpected pairings" experiment has visible output
 - [ ] Streamlit app runs locally
 - [ ] Deployment link works
-- [ ] Export notebook as PDF (`File â†’ Export â†’ PDF`)
-- [ ] Presentation slides cover all 12 sections from the rubric
+- [ ] Notebook exported as PDF
+- [ ] Presentation covers: business problem, EDA, CNN results, BiLSTM results, joint model + unexpected pairings, Grad-CAM, attention, deployment demo, ethics
 
 ---
 
-Total steps: 20 | Phases: 3 | GPU required: Phase 2 only (Google Colab, free tier is enough)
+Total steps: 19 | Phases: 3 | GPU required: Phase 2 only
+
+| Phase | Where | Sections | Needs GPU |
+|---|---|---|---|
+| 1 | VS Code, CPU | 1–4, 6, 10–11, 13 (skeleton) | No |
+| 2 | Google Colab | 5, 7–8, 13 (full) | **Yes** |
+| 3 | VS Code, CPU | 9, 12, 14–15, deployment | No |
