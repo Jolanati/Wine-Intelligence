@@ -1,0 +1,17 @@
+# ── Dataset (large files — download locally via Section 2) ───────────────────
+beer-peer/data/food-101/
+beer-peer/data/food-101.tar.gz
+
+# ── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+env/
+
+# ── Jupyter ───────────────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+
+# ── OS ────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
