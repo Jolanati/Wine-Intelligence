@@ -172,8 +172,8 @@ The recommendation card returned to the user:
 
 | # | What | Details |
 | --- | --- | --- |
-| 1 | `beer_peer.ipynb` | Single notebook, all code and outputs, runs end to end |
-| 2 | `beer_peer.pdf` | Same notebook exported as PDF |
+| 1 | `wine_peer.ipynb` | Single notebook, all code and outputs, runs end to end |
+| 2 | `wine_peer.pdf` | Same notebook exported as PDF |
 | 3 | Presentation | 15-20 min slide deck (.pptx or .pdf) |
 | 4 | Deployment link | Wine Peer hosted on **Hugging Face Spaces** (Streamlit) |
 
@@ -182,8 +182,8 @@ The recommendation card returned to the user:
 ## File structure
 
 ```text
-beer-peer/
-├── beer_peer.ipynb             <- the submission — fully self-contained
+wine-dine/
+├── wine_peer.ipynb             <- the submission — fully self-contained
 ├── requirements.txt
 ├── weights/
 │   ├── cnn_scratch.pt

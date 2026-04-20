@@ -37,7 +37,7 @@ A user photographs their food. Wine Peer returns three wine recommendations — 
 ## Before you start — one-time setup
 
 1. Folders `weights/`, `figures/`, `deployment/` are created automatically by the notebook.
-2. Open `beer-peer/beer_peer.ipynb`.
+2. Open `wine-dine/wine_peer.ipynb`.
 3. Run **Section 1** (pip installs) once per environment. No Kaggle API key needed — WineSensed loads via Hugging Face.
 
 ---
@@ -238,7 +238,7 @@ class CompatibilityModel(nn.Module):
 
 ### STEP 10 — Move to Colab
 
-- Upload `beer-peer/beer_peer.ipynb` to Colab; mount Drive; set weight output paths to Drive.
+- Upload `wine-dine/wine_peer.ipynb` to Colab; mount Drive; set weight output paths to Drive.
 - Run **Section 5**: build image `DataLoader` from Food-101.
   - Transforms: `Resize(256) ? CenterCrop(224) ? RandomHorizontalFlip ? ColorJitter ? ToTensor ? Normalize(ImageNet stats)`.
   - Train / val / test split stratified by class (750/250 already done by Food-101 — use official split).
