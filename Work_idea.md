@@ -127,7 +127,7 @@ WineSensed contains hundreds of grape varieties. Top 15 by review frequency cove
 
 - **Input:** food photograph (224x224 RGB)
 - **Task:** 101-class food classification
-- **Architecture 1:** Custom CNN trained from scratch (>=3 conv blocks)
+- **Architecture 1:** Custom CNN trained from scratch (>=3 conv blocks) - With 101 classes, a random guess gives you roughly 1% accuracy. 
 - **Architecture 2:** ResNet-50, frozen backbone + fine-tuned head
 - **Explainability:** Grad-CAM — which part of the food photo drove the prediction?
 
